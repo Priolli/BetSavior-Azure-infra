@@ -1,0 +1,34 @@
+# agent.config.yaml - BetSavior Core Agent (dev)
+# Azure-only, security-first, no secrets in repo
+agent:
+  name: betsavior-core
+  environment: dev
+  region: westeurope
+  tools:
+    - name: rag
+      type: ai-search
+      endpoint: https://betsavior-search-dev.search.windows.net
+      index: clinical-materials
+    - name: memory
+      type: cosmos
+      endpoint: https://betsavior-cosmos-dev.documents.azure.com:443/
+      database: betsavior
+    - name: notify
+      type: acs
+      endpoint: https://betsavior-acs-dev.communication.azure.com
+    - name: risk
+      type: http
+      endpoint: https://betsavior-func-dev.azurewebsites.net/api/riskScore
+  security:
+    managedIdentity: true
+    keyVault: betsavior-kv-dev
+    rbac: true
+    piiMasking: true
+    consentRequired: true
+    logFields:
+      - traceId
+      - userId
+      - agentName
+      - toolName
+      - latencyMs
+      - outcome

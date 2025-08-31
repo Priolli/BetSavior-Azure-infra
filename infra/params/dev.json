@@ -1,0 +1,11 @@
+{
+  "location": "westeurope",
+  "env": "dev",
+  "cosmosDbAccountName": "betsavior-cosmos-dev",
+  "keyVaultName": "betsavior-kv-dev",
+  "storageAccountName": "betsaviorstoragedev",
+  "aiSearchName": "betsavior-search-dev",
+  "appInsightsName": "betsavior-ai-dev",
+  "functionAppName": "betsavior-func-dev",
+  "acsName": "betsavior-acs-dev"
+}

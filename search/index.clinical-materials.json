@@ -1,0 +1,29 @@
+{
+  "name": "clinical-materials",
+  "fields": [
+    { "name": "id", "type": "Edm.String", "key": true, "searchable": false },
+    { "name": "title", "type": "Edm.String", "searchable": true, "filterable": true, "sortable": true },
+    { "name": "content", "type": "Edm.String", "searchable": true, "analyzer": "en.microsoft" },
+    { "name": "topic", "type": "Edm.String", "searchable": true, "filterable": true, "facetable": true },
+    { "name": "severity", "type": "Edm.String", "filterable": true, "facetable": true },
+    { "name": "treatmentStage", "type": "Edm.String", "filterable": true, "facetable": true },
+    { "name": "embedding", "type": "Collection(Edm.Single)", "dimensions": 1536, "searchable": false, "filterable": false, "facetable": false }
+  ],
+  "semantic": {
+    "configurations": [
+      {
+        "name": "default",
+        "prioritizedFields": {
+          "titleField": { "fieldName": "title" },
+          "contentFields": [ { "fieldName": "content" } ],
+          "keywordsFields": [ { "fieldName": "topic" } ]
+        }
+      }
+    ]
+  },
+  "vectorSearch": {
+    "algorithmConfigurations": [
+      { "name": "default", "kind": "hnsw" }
+    ]
+  }
+}
