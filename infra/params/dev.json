@@ -1,11 +1,11 @@
 {
-  "location": "westeurope",
-  "env": "dev",
-  "cosmosDbAccountName": "betsavior-cosmos-dev",
-  "keyVaultName": "betsavior-kv-dev",
-  "storageAccountName": "betsaviorstoragedev",
-  "aiSearchName": "betsavior-search-dev",
-  "appInsightsName": "betsavior-ai-dev",
-  "functionAppName": "betsavior-func-dev",
-  "acsName": "betsavior-acs-dev"
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "project": { "value": "bsrv" },
+    "env": { "value": "dev" },
+    "location": { "value": "westeurope" },
+    "cosmosMaxRu": { "value": 1000 },
+    "deployAcs": { "value": false }
+  }
 }

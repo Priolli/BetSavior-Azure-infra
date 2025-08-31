@@ -1,94 +1,40 @@
-// cosmos-containers.bicep - Cosmos DB containers for BetSavior
-// All containers use /userId as partition key
-param cosmosDbAccountName string
-param dbName string = 'betsavior'
+// Creates one SQL container under an existing Cosmos SQL database.
+// Uses autoscale throughput on the container.
 
-resource db 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2023-04-15' = {
-  parent: resourceId('Microsoft.DocumentDB/databaseAccounts', cosmosDbAccountName)
-  name: dbName
-  properties: {}
+param accountName string
+param databaseName string
+param containerName string
+param partitionKey string = '/userId'
+@minValue(400)
+param maxRu int = 1000
+
+// IMPORTANT: parent must be a RESOURCE reference, not a string.
+// We declare the SQL database as an existing resource and attach the container to it.
+resource sqlDb 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-05-15' existing = {
+  name: '${accountName}/${databaseName}'
 }
 
-resource users 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2023-04-15' = {
-  parent: db
-  name: 'users'
+resource container 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2024-05-15' = {
+  name: '${containerName}'
+  parent: sqlDb
   properties: {
-    partitionKey: {
-      paths: ['/userId']
-      kind: 'Hash'
+    resource: {
+      id: containerName
+      partitionKey: {
+        paths: [
+          partitionKey
+        ]
+        kind: 'Hash'
+        version: 2
+      }
+      indexingPolicy: {
+        indexingMode: 'consistent'
+      }
     }
-    indexingPolicy: {
-      indexingMode: 'consistent'
-    }
-  }
-}
-
-resource sessions 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2023-04-15' = {
-  parent: db
-  name: 'sessions'
-  properties: {
-    partitionKey: {
-      paths: ['/userId']
-      kind: 'Hash'
-    }
-    indexingPolicy: {
-      indexingMode: 'consistent'
-    }
-  }
-}
-
-resource goals 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2023-04-15' = {
-  parent: db
-  name: 'goals'
-  properties: {
-    partitionKey: {
-      paths: ['/userId']
-      kind: 'Hash'
-    }
-    indexingPolicy: {
-      indexingMode: 'consistent'
-    }
-  }
-}
-
-resource journals 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2023-04-15' = {
-  parent: db
-  name: 'journals'
-  properties: {
-    partitionKey: {
-      paths: ['/userId']
-      kind: 'Hash'
-    }
-    indexingPolicy: {
-      indexingMode: 'consistent'
-    }
-  }
-}
-
-resource finance_events 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2023-04-15' = {
-  parent: db
-  name: 'finance_events'
-  properties: {
-    partitionKey: {
-      paths: ['/userId']
-      kind: 'Hash'
-    }
-    indexingPolicy: {
-      indexingMode: 'consistent'
-    }
-  }
-}
-
-resource risk_states 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2023-04-15' = {
-  parent: db
-  name: 'risk_states'
-  properties: {
-    partitionKey: {
-      paths: ['/userId']
-      kind: 'Hash'
-    }
-    indexingPolicy: {
-      indexingMode: 'consistent'
+    options: {
+      autoscaleSettings: {
+        maxThroughput: maxRu
+      }
     }
   }
 }

@@ -1,34 +1,42 @@
-// main.bicep - BetSavior core infrastructure (dev, westeurope)
-// Azure-only, idempotent, no secrets, MI enabled
-param location string = 'westeurope'
-param env string = 'dev'
-param cosmosDbAccountName string = 'betsavior-cosmos-${env}'
-param keyVaultName string = 'betsavior-kv-${env}'
-param storageAccountName string = 'betsaviorstoragedev'
-param aiSearchName string = 'betsavior-search-${env}'
-param appInsightsName string = 'betsavior-ai-${env}'
-param functionAppName string = 'betsavior-func-${env}'
-param acsName string = 'betsavior-acs-${env}'
+targetScope = 'resourceGroup'
 
-// Key Vault (RBAC, purge protection)
-resource keyVault 'Microsoft.KeyVault/vaults@2023-02-01' = {
-  name: keyVaultName
+@description('Project short name')
+param project string = 'bsrv'
+
+@description('Environment: dev | stage | prod')
+param env string = 'dev'
+
+@description('Azure region')
+param location string = resourceGroup().location
+
+@description('Cosmos DB autoscale max RU/s per container')
+@minValue(400)
+param cosmosMaxRu int = 1000
+
+@description('Deploy Azure Communication Services (may be unavailable on some subscriptions)')
+param deployAcs bool = false
+
+var namePrefix = '${project}-${env}'
+
+// --------------------- Key Vault (RBAC) ---------------------
+resource kv 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: '${namePrefix}-kv'
   location: location
   properties: {
+    tenantId: tenant().tenantId
     enableRbacAuthorization: true
-    enablePurgeProtection: true
-    tenantId: subscription().tenantId
     sku: {
-      family: 'A'
       name: 'standard'
+      family: 'A'
     }
-    accessPolicies: []
+    softDeleteRetentionInDays: 90
+    publicNetworkAccess: 'Enabled'
   }
 }
 
-// Storage Account
-resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
-  name: storageAccountName
+// --------------------- Storage Account ---------------------
+resource st 'Microsoft.Storage/storageAccounts@2023-05-01' = {
+  name: toLower(replace('${namePrefix}st', '-', ''))
   location: location
   sku: {
     name: 'Standard_LRS'
@@ -37,13 +45,83 @@ resource storage 'Microsoft.Storage/storageAccounts@2023-01-01' = {
   properties: {
     allowBlobPublicAccess: false
     minimumTlsVersion: 'TLS1_2'
-    accessTier: 'Hot'
+    networkAcls: {
+      bypass: 'AzureServices'
+      defaultAction: 'Allow'
+    }
   }
 }
 
-// Cosmos DB Account
-resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
-  name: cosmosDbAccountName
+// --------------------- Azure AI Search Service ---------------------
+resource ais 'Microsoft.Search/searchServices@2023-11-01' = {
+  name: '${namePrefix}-aisearch'
+  location: location
+  sku: {
+    name: 'basic'
+  }
+  properties: {
+    // semanticSearch must be a string (free|standard)
+    semanticSearch: 'free'
+    // vector settings are configured at the INDEX level, not here
+  }
+}
+
+// --------------------- Application Insights ---------------------
+resource appi 'Microsoft.Insights/components@2020-02-02' = {
+  name: '${namePrefix}-appi'
+  location: location
+  kind: 'web'
+  properties: {
+    Application_Type: 'web'
+  }
+}
+
+// --------------------- Functions (Consumption Y1) ---------------------
+resource plan 'Microsoft.Web/serverfarms@2023-12-01' = {
+  name: '${namePrefix}-plan'
+  location: location
+  sku: {
+    name: 'Y1'
+    tier: 'Dynamic'
+  }
+}
+
+resource func 'Microsoft.Web/sites@2023-12-01' = {
+  name: '${namePrefix}-func'
+  location: location
+  kind: 'functionapp'
+  identity: {
+    type: 'SystemAssigned'
+  }
+  properties: {
+    httpsOnly: true
+    serverFarmId: plan.id
+    siteConfig: {
+      appSettings: [
+        {
+          name: 'FUNCTIONS_WORKER_RUNTIME'
+          value: 'node'
+        }
+        {
+          name: 'AzureWebJobsStorage'
+          value: st.listKeys().keys[0].value
+        }
+        {
+          name: 'WEBSITE_RUN_FROM_PACKAGE'
+          value: '1'
+        }
+        {
+          name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
+          value: appi.properties.InstrumentationKey
+        }
+      ]
+    }
+  }
+}
+
+// --------------------- Cosmos DB (SQL API) ---------------------
+resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-05-15' = {
+  name: '${namePrefix}-cosmos'
   location: location
   kind: 'GlobalDocumentDB'
   properties: {
@@ -52,131 +130,55 @@ resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
       {
         locationName: location
         failoverPriority: 0
+        isZoneRedundant: false
       }
     ]
-    enableFreeTier: true
-    enableAnalyticalStorage: false
-    isVirtualNetworkFilterEnabled: false
     publicNetworkAccess: 'Enabled'
-    enableAutomaticFailover: false
-    consistencyPolicy: {
-      defaultConsistencyLevel: 'Session'
-    }
-    capabilities: []
+    minimalTlsVersion: 'Tls12'
+    // No Serverless capability here, we will use autoscale on containers
   }
 }
 
-// Cosmos DB SQL Database and containers (users, sessions, goals, journals, finance_events, risk_states)
-module cosmosContainers 'cosmos-containers.bicep' = {
-  name: 'cosmos-containers'
+// SQL database
+resource cosmosDb 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2024-05-15' = {
+  name: '${cosmos.name}/betsavior'
+  properties: {
+    resource: {
+      id: 'betsavior'
+    }
+    options: {}
+  }
+}
+
+// Containers (module invocation) - all partitioned by /userId
+module containers 'cosmos-containers.bicep' = [for c in [
+  'users', 'sessions', 'goals', 'journals', 'finance_events', 'risk_states'
+]: {
+  name: 'container-${c}'
   params: {
-    cosmosDbAccountName: cosmosDbAccountName
-    dbName: 'betsavior'
+    accountName: cosmos.name
+    databaseName: 'betsavior'
+    containerName: c
+    partitionKey: '/userId'
+    maxRu: cosmosMaxRu
   }
-  dependsOn: [cosmos]
-}
+}]
 
-// Azure AI Search
-resource aiSearch 'Microsoft.Search/searchServices@2023-11-01' = {
-  name: aiSearchName
-  location: location
-  sku: {
-    name: 'standard'
-  }
-  properties: {
-    hostingMode: 'default'
-    semanticSearch: 'standard'
-    replicaCount: 1
-    partitionCount: 1
-    publicNetworkAccess: 'enabled'
-    vectorSearch: {
-      algorithmConfigurations: [
-        {
-          name: 'default'
-          kind: 'hnsw'
-        }
-      ]
-    }
-  }
-}
-
-// Application Insights
-resource appInsights 'Microsoft.Insights/components@2020-02-02' = {
-  name: appInsightsName
-  location: location
-  kind: 'web'
-  properties: {
-    Application_Type: 'web'
-    IngestionMode: 'ApplicationInsights'
-  }
-}
-
-// App Service Plan (Y1 Consumption for Functions)
-resource plan 'Microsoft.Web/serverfarms@2022-09-01' = {
-  name: 'betsavior-funcplan-${env}'
-  location: location
-  sku: {
-    name: 'Y1'
-    tier: 'Dynamic'
-  }
-  kind: 'functionapp'
-}
-
-// Function App (system-assigned MI, HTTPS only, minimal secure app settings)
-resource functionApp 'Microsoft.Web/sites@2022-09-01' = {
-  name: functionAppName
-  location: location
-  kind: 'functionapp'
-  identity: {
-    type: 'SystemAssigned'
-  }
-  properties: {
-    serverFarmId: plan.id
-    httpsOnly: true
-    siteConfig: {
-      appSettings: [
-        {
-          name: 'AzureWebJobsStorage'
-          value: storage.properties.primaryEndpoints.blob
-        }
-        {
-          name: 'WEBSITE_RUN_FROM_PACKAGE'
-          value: '1'
-        }
-        {
-          name: 'APPINSIGHTS_INSTRUMENTATIONKEY'
-          value: appInsights.properties.InstrumentationKey
-        }
-        {
-          name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
-          value: appInsights.properties.ConnectionString
-        }
-        {
-          name: 'FUNCTIONS_EXTENSION_VERSION'
-          value: '~4'
-        }
-        {
-          name: 'FUNCTIONS_WORKER_RUNTIME'
-          value: 'node'
-        }
-      ]
-    }
-  }
-  dependsOn: [plan, storage, appInsights]
-}
-
-// Azure Communication Services (ACS)
-resource acs 'Microsoft.Communication/communicationServices@2023-04-01-preview' = {
-  name: acsName
+// --------------------- Azure Communication Services (optional) ---------------------
+resource acs 'Microsoft.Communication/communicationServices@2023-04-01' = if (deployAcs) {
+  name: '${namePrefix}-acs'
   location: location
   properties: {
+    // choose a dataLocation compatible with your tenant; 'Europe' fits westeurope
     dataLocation: 'Europe'
   }
 }
 
-output keyVaultUri string = keyVault.properties.vaultUri
-output cosmosDbAccount string = cosmos.name
-output aiSearchName string = aiSearch.name
-output appInsightsName string = appInsights.name
-output functionAppName string = functionApp.name
-output acsName string = acs.name
+// --------------------- Outputs ---------------------
+output keyVaultName string = kv.name
+output storageAccountName string = st.name
+output searchServiceName string = ais.name
+output functionAppName string = func.name
+output cosmosAccountName string = cosmos.name
+output appInsightsName string = appi.name
+output acsName string = deployAcs ? acs.name : 'not-deployed'
