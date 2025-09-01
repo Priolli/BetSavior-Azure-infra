@@ -1,17 +1,20 @@
 // missedCheckinOrchestrator.ts - Durable orchestrator for missed check-ins
-import { AzureFunction, Context, DurableOrchestrationContext } from '@azure/functions';
+import { AzureFunction, Context } from "@azure/functions";
+import * as df from "durable-functions";
 
-const orchestrator: AzureFunction = function* (context: Context) {
-  const df = context.df as DurableOrchestrationContext;
-  const users = yield df.callActivity('getUsersAtRisk');
-  for (const user of users) {
-    yield df.callActivity('invokeDailyCheckin', user);
-    const event = yield df.waitForExternalEvent('CheckinCompleted', 24 * 60 * 60 * 1000); // 24h timeout
+const orchestrator: AzureFunction = df.orchestrator(function* (context: df.OrchestrationContext) {
+  const users: any[] = yield context.df.callActivity("getUsersAtRisk");
+
+  for (const u of users ?? []) {
+    yield context.df.callActivity("invokeDailyCheckin", u);
+
+    const event = yield context.df.waitForExternalEvent("CheckinCompleted", 24 * 60 * 60 * 1000);
     if (!event) {
-      yield df.callActivity('sendFollowUpNudge', user);
+      yield context.df.callActivity("sendFollowUpNudge", u);
     }
   }
-  return { processed: users.length };
-};
+
+  return { processed: users?.length ?? 0 };
+});
 
 export default orchestrator;

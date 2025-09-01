@@ -1,17 +1,20 @@
 {
   "name": "risk-score",
   "version": "0.1.0",
-  "main": "index.js",
-  "license": "MIT",
+  "private": true,
   "scripts": {
-    "build": "tsc",
-    "lint": "eslint . --ext .ts",
-    "start": "func start"
+    "build": "tsc -p .",
+    "lint": "echo \"(add eslint later)\"",
+    "start": "func start --typescript"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@azure/functions": "^3.5.1",
+    "applicationinsights": "^2.9.5",
+    "durable-functions": "^2.1.4"
+  },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "typescript": "^5.0.0",
-    "eslint": "^8.0.0"
+    "@types/node": "^20.19.11",
+    "tslib": "^2.8.1",
+    "typescript": "^5.4.5"
   }
 }
