@@ -1,0 +1,6 @@
+{
+  "description": "Node.js worker config",
+  "language": "typescript",
+  "workerDirectory": "",
+  "defaultExecutablePath": "node"
+}
