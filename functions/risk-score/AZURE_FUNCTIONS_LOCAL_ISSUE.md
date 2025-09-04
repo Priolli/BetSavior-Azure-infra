@@ -35,33 +35,6 @@ This occurred despite the following:
 6. **Inspected for Missing Configurations**
    - Discovered that worker.config.json was missing, which is required for Node.js isolated worker projects in Azure Functions Core Tools v4+.
 
-## Solution Implemented
+## Still no soluction founded.
 
-- Created `worker.config.json` in `/functions/risk-score/` with the following content:
 
-```json
-{
-  "description": "Node.js worker configuration",
-  "language": "typescript",
-  "worker": "node"
-}
-```
-
-## Next Steps
-
-1. Rerun build and start commands:
-   ```sh
-   npm run build
-   func start --typescript -p 7072 --verbose
-   ```
-2. Confirm that the host now recognizes all functions.
-3. If issues persist, review new host output and continue diagnostics.
-
-## Lessons Learned
-
-- For Node.js isolated worker projects, `worker.config.json` is mandatory for function recognition in Azure Functions Core Tools v4+.
-- Always validate presence of all required config files when troubleshooting function recognition issues.
-
----
-
-**Status:** Awaiting confirmation that functions are recognized after adding `worker.config.json`.
